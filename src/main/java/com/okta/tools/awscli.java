@@ -16,25 +16,27 @@ import com.amazonaws.AmazonClientException;
 import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.auth.BasicSessionCredentials;
 import com.amazonaws.auth.profile.ProfilesConfigFile;
+import com.amazonaws.services.identitymanagement.AmazonIdentityManagementClient;
+import com.amazonaws.services.identitymanagement.model.AttachedPolicy;
 import com.amazonaws.services.identitymanagement.model.GetPolicyRequest;
 import com.amazonaws.services.identitymanagement.model.GetPolicyResult;
 import com.amazonaws.services.identitymanagement.model.GetPolicyVersionRequest;
 import com.amazonaws.services.identitymanagement.model.GetPolicyVersionResult;
+import com.amazonaws.services.identitymanagement.model.GetRolePolicyRequest;
+import com.amazonaws.services.identitymanagement.model.GetRolePolicyResult;
 import com.amazonaws.services.identitymanagement.model.GetRoleRequest;
 import com.amazonaws.services.identitymanagement.model.GetRoleResult;
+import com.amazonaws.services.identitymanagement.model.ListAttachedRolePoliciesRequest;
+import com.amazonaws.services.identitymanagement.model.ListAttachedRolePoliciesResult;
+import com.amazonaws.services.identitymanagement.model.ListRolePoliciesRequest;
+import com.amazonaws.services.identitymanagement.model.ListRolePoliciesResult;
 import com.amazonaws.services.identitymanagement.model.Policy;
+import com.amazonaws.services.identitymanagement.model.Role;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClient;
 import com.amazonaws.services.securitytoken.model.AssumeRoleWithSAMLRequest;
 import com.amazonaws.services.securitytoken.model.AssumeRoleWithSAMLResult;
-import com.amazonaws.services.identitymanagement.*;
-import com.amazonaws.services.identitymanagement.model.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.okta.sdk.clients.AuthApiClient;
-import com.okta.sdk.clients.FactorsApiClient;
-import com.okta.sdk.clients.UserApiClient;
-import com.okta.sdk.exceptions.ApiException;
-import com.okta.sdk.framework.ApiClientConfiguration;
 import com.okta.sdk.models.auth.AuthResult;
 import com.okta.sdk.models.factors.Factor;
 import org.apache.commons.codec.binary.Base64;
@@ -45,21 +47,34 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.Console;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.io.UnsupportedEncodingException;
 import java.net.MalformedURLException;
 import java.net.URLDecoder;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
 import java.text.SimpleDateFormat;
-import java.util.*;
-import java.nio.charset.*;
-
-import org.apache.logging.log4j.Logger;
-import org.apache.logging.log4j.LogManager;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.InputMismatchException;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Scanner;
 
 //Amazon SDK namespaces
 //Okta SDK namespaces
@@ -73,13 +88,9 @@ public class awscli {
     private static String awsIamKey = null;
     private static String awsIamSecret = null;
     private static String awsRegion;
-    private static AuthApiClient authClient;
 
     private static final String DefaultProfileName = "default";
 
-    private static FactorsApiClient factorClient;
-    private static UserApiClient userClient;
-    private static String userId;
     private static String crossAccountRoleName = null;
     private static String roleToAssume; //the ARN of the role the user wants to eventually assume (not the cross-account role, the "real" role in the target account)
     private static int selectedPolicyRank; //the zero-based rank of the policy selected in the selected cross-account role (in case there is more than one policy tied to the current policy)
@@ -90,7 +101,6 @@ public class awscli {
         extractCredentials();
 
         // Step #1: Initiate the authentication and capture the SAML assertion.
-        CloseableHttpClient httpClient = null;
         String resultSAML = "";
         try {
 
@@ -236,23 +246,6 @@ public class awscli {
         awsIamKey = config.getAwsIamKey();
         awsIamSecret = config.getAwsIamSecret();
         awsRegion = config.getAwsRegion();
-    }
-
-    /*Uses user's credentials to obtain Okta session Token */
-    private static AuthResult authenticateCredentials(String username, String password) throws ApiException, JSONException, ClientProtocolException, IOException {
-
-        ApiClientConfiguration oktaSettings = new ApiClientConfiguration("https://" + oktaOrg, "");
-        AuthResult result = null;
-        authClient = new AuthApiClient(oktaSettings);
-        userClient = new UserApiClient(oktaSettings);
-        factorClient = new FactorsApiClient(oktaSettings);
-
-        // Check if the user credentials are valid
-        result = authClient.authenticate(username, password, "");
-        // The result has a getStatus method which is a string of status of the request.
-        // Example - SUCCESS for successful authentication
-        String status = result.getStatus();
-        return result;
     }
 
     /*Handles possible authentication failures */
@@ -1294,70 +1287,6 @@ public class awscli {
      * Postcondition: return session token as String sessionToken
      */
 
-    private static String mfa(AuthResult authResult) throws IOException {
-/*
-        try {
-
-            //User selects which factor to use
-            Factor selectedFactor = selectFactor(authResult);
-            String factorType = selectedFactor.getFactorType();
-            String stateToken = authResult.getStateToken();
-
-            //factor selection handler
-            switch (factorType) {
-                case ("question"): {
-                    //question factor handler
-                    //String sessionToken = questionFactor(factor, stateToken);
-                    //if (sessionToken.equals("change factor")) {
-                    //    System.out.println("Factor Change Initiated");
-                    //    return mfa(authResponse);
-                    //}
-                    //return sessionToken;
-                }
-                case ("sms"): {
-                    //sms factor handler
-                    //String sessionToken = smsFactor(factor, stateToken);
-                    //if (sessionToken.equals("change factor")) {
-                    //    System.out.println("Factor Change Initiated");
-                    //    return mfa(authResponse);
-                    //}
-                    //return sessionToken;
-
-                }
-                case ("token:software:totp"): {
-                    //token factor handler
-                    String sessionToken = totpFactor(selectedFactor, stateToken);
-                    if (sessionToken.equals("change factor")) {
-                        System.out.println("Factor Change Initiated");
-                        return mfa(authResult);
-                    }
-                    return sessionToken;
-                }
-                case ("push"): {
-                    //push factor handles
-                    /*
-                    String result = pushFactor(factor, stateToken);
-                    if (result.equals("timeout") || result.equals("change factor")) {
-                        return mfa(authResponse);
-                    }
-                    return result;
-
-                }
-            }
-
-        } catch (JSONException e) {
-            e.printStackTrace();
-        } /*catch (ClientProtocolException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        } catch (IOException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        }
-*/
-        return "";
-    }
-
     /* prints final status message to user */
     private static void resultMessage(String profileName) {
         Calendar date = Calendar.getInstance();
@@ -1375,94 +1304,6 @@ public class awscli {
         System.out.println("You can also omit the --profile option to use the last configured profile "
                 + "(e.g. aws s3 ls)");
         System.out.println("----------------------------------------------------------------------------------------------------------------------");
-    }
-
-    /* Authenticates users credentials via Okta, return Okta session token
-     * Postcondition: returns String oktaSessionToken
-     * */
-    private static String oktaAuthentication() throws ClientProtocolException, JSONException, IOException {
-
-        String strSessionToken = "";
-        AuthResult authResult = null;
-
-        int requestStatus = 0;
-        String strAuthStatus = "";
-
-        //Redo sequence if response from AWS doesn't return 200 Status
-        while (!strAuthStatus.equalsIgnoreCase("SUCCESS") && !strAuthStatus.equalsIgnoreCase("MFA_REQUIRED")) {
-
-            // Prompt for user credentials
-            System.out.print("Username: ");
-            //Scanner scanner = new Scanner(System.in);
-
-            String oktaUsername = null; //scanner.next();
-
-            Console console = System.console();
-            String oktaPassword = null;
-            if (console != null) {
-                oktaPassword = new String(console.readPassword("Password: "));
-            } else { // hack to be able to debug in an IDE
-                System.out.print("Password: ");
-            }
-            try {
-                authResult = authenticateCredentials(oktaUsername, oktaPassword);
-                strAuthStatus = authResult.getStatus();
-
-                if (strAuthStatus.equalsIgnoreCase("MFA_REQUIRED")) {
-                    if (userClient != null) {
-                        LinkedHashMap<String, Object> user = (LinkedHashMap<String, Object>) (authResult.getEmbedded().get("user"));
-                        userId = (String) user.get("id");
-
-                        //userId = user.getId();
-                            /*User user = userClient.getUser(oktaUsername);
-                            if(user!=null)
-                                userId = user.getId();*/
-                    }
-                }
-
-            } catch (ApiException apiException) {
-                String strEx = apiException.getMessage();
-
-                switch (apiException.getStatusCode()) {
-                    case 400:
-                    case 401:
-                        System.out.println("You provided invalid credentials, please try again.");
-                        break;
-                    case 500:
-                        System.out.println("\nUnable to establish connection with: " +
-                                oktaOrg + " \nPlease verify that your Okta org url is correct and try again");
-                        System.exit(0);
-                        break;
-                    default:
-                        throw new RuntimeException("Failed : HTTP error code : "
-                                + apiException.getStatusCode() + " Error code: " + apiException.getErrorResponse().getErrorCode() + " Error summary: " + apiException.getErrorResponse().getErrorSummary());
-
-                }
-            }
-            //requestStatus = responseAuthenticate.getStatusLine().getStatusCode();
-            //authnFailHandler(requestStatus, responseAuthenticate);
-        }
-
-
-        //Retrieve and parse the Okta response for session token
-            /*BufferedReader br = new BufferedReader(new InputStreamReader(
-                    (responseAuthenticate.getEntity().getContent())));
-
-            String outputAuthenticate = br.readLine();
-            JSONObject jsonObjResponse = new JSONObject(outputAuthenticate);
-
-            responseAuthenticate.close();*/
-
-        if (strAuthStatus.equalsIgnoreCase("MFA_REQUIRED")) {
-            return mfa(authResult);
-        }
-        //else {
-        //    return jsonObjResponse.getString("sessionToken");
-        //}
-
-        if (authResult != null)
-            strSessionToken = authResult.getSessionToken();
-        return strSessionToken;
     }
 
 
