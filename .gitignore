@@ -4,6 +4,8 @@
 *.war
 *.ear
 
+okta-aws-cli.iml
+.idea
 # jar folder
 META-INF
 
