@@ -68,6 +68,7 @@ public class awscli {
 
     //User specific variables
     private static String oktaOrg = "";
+    private static String oktaUsername = "";
     private static String oktaAWSAppURL = "";
     private static String awsIamKey = null;
     private static String awsIamSecret = null;
@@ -141,10 +142,7 @@ public class awscli {
         while (requestStatus != 200) {
 
             // Prompt for user credentials
-            System.out.print("Username: ");
             Scanner scanner = new Scanner(System.in);
-
-            String oktaUsername = scanner.next();
 
             Console console = System.console();
             String oktaPassword = null;
@@ -232,6 +230,7 @@ public class awscli {
     private static void extractCredentials() throws IOException {
         ConfigParser config = ConfigParser.getConfig();
         oktaOrg = config.getOktaOrg();
+        oktaUsername = config.getOktaUsername();
         oktaAWSAppURL = config.getOktaAWSAppURL();
         awsIamKey = config.getAwsIamKey();
         awsIamSecret = config.getAwsIamSecret();

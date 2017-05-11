@@ -17,6 +17,7 @@ public class ConfigParser {
     private static final Logger LOGGER = LogManager.getLogger(ConfigParser.class);
 
     private String oktaOrg;
+    private String oktaUsername;
     private String oktaAWSAppURL;
     private String awsIamKey;
     private String awsIamSecret;
@@ -34,6 +35,14 @@ public class ConfigParser {
 
     public void setOktaOrg(String oktaOrg) {
         this.oktaOrg = oktaOrg;
+    }
+
+    public String getOktaUsername() {
+        return oktaUsername;
+    }
+
+    public void setOktaUsername(String oktaUsername) {
+        this.oktaUsername = oktaUsername;
     }
 
     public String getOktaAWSAppURL() {
@@ -86,6 +95,7 @@ public class ConfigParser {
 
         ConfigParser config = new ConfigParser();
         config.setOktaOrg(props.getProperty("OKTA_ORG"));
+        config.setOktaUsername(props.getProperty("OKTA_USERNAME"));
         config.setOktaAWSAppURL(props.getProperty("OKTA_AWS_APP_URL"));
         config.setAwsIamKey(props.getProperty("AWS_IAM_KEY"));
         config.setAwsIamSecret(props.getProperty("AWS_IAM_SECRET"));
