@@ -83,7 +83,7 @@
                         <configuration>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.okta.tools.awscli</mainClass>
+                                    <mainClass>com.okta.tools.AWSCli</mainClass>
                                 </transformer>
                             </transformers>
                         </configuration>

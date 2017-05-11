@@ -1,6 +1,5 @@
 package com.okta.tools;
 
-import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
@@ -14,7 +13,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.Calendar;
+import java.util.Objects;
 import java.util.Scanner;
 
 class MFA {
@@ -65,24 +64,19 @@ class MFA {
                     return result;
                 }
             }
-        } catch (JSONException e) {
-            e.printStackTrace();
-        } catch (ClientProtocolException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
-        } catch (IOException e) {
-            // TODO Auto-generated catch block
+        } catch (JSONException | IOException e) {
             e.printStackTrace();
         }
 
         return "";
     }
 
-    /*Handles factor selection based on factors found in parameter authResponse, returns the selected factor
-* Precondition: JSINObject authResponse
-* Postcondition: return session token as String sessionToken
-*/
-    public static JSONObject selectFactor(JSONObject authResponse) throws JSONException {
+    /**
+     * Handles factor selection based on factors found in parameter authResponse, returns the selected factor
+     * Precondition: JSINObject authResponse
+     * Postcondition: return session token as String sessionToken
+     */
+    private static JSONObject selectFactor(JSONObject authResponse) throws JSONException {
         JSONArray factors = authResponse.getJSONObject("_embedded").getJSONArray("factors");
         JSONObject factor;
         String factorType;
@@ -92,7 +86,9 @@ class MFA {
         for (int i = 0; i < factors.length(); i++) {
             factor = factors.getJSONObject(i);
             factorType = factor.getString("factorType");
-            if (factorType.equals("question")) {
+            if (factorType.equals("push")) {
+                factorType = "Okta Verify (Push)";
+            } else if (factorType.equals("question")) {
                 factorType = "Security Question";
             } else if (factorType.equals("sms")) {
                 factorType = "SMS Authentication";
@@ -101,19 +97,19 @@ class MFA {
                 if (provider.equals("GOOGLE")) {
                     factorType = "Google Authenticator";
                 } else {
-                    factorType = "Okta Verify";
+                    factorType = "Okta Verify (OTP)";
                 }
             }
             System.out.println("[ " + (i + 1) + " ] : " + factorType);
         }
 
         //Handles user factor selection
-        int selection = numSelection(factors.length());
+        int selection = AWSCli.numSelection(factors.length());
         return factors.getJSONObject(selection);
     }
 
 
-    private static String questionFactor(JSONObject factor, String stateToken) throws JSONException, ClientProtocolException, IOException {
+    private static String questionFactor(JSONObject factor, String stateToken) throws JSONException, IOException {
         String question = factor.getJSONObject("profile").getString("questionText");
         Scanner scanner = new Scanner(System.in);
         String sessionToken = "";
@@ -121,8 +117,8 @@ class MFA {
 
         //prompt user for answer
         System.out.println("\nSecurity Question Factor Authentication\nEnter 'change factor' to use a different factor\n");
-        while (sessionToken == "") {
-            if (answer != "") {
+        while (Objects.equals(sessionToken, "")) {
+            if (!Objects.equals(answer, "")) {
                 System.out.println("Incorrect answer, please try again");
             }
             System.out.println(question);
@@ -138,19 +134,20 @@ class MFA {
     }
 
 
-    /*Handles sms factor authentication
+    /**
+     * Handles sms factor authentication
      * Precondition: question factor as JSONObject factor, current state token stateToken
      * Postcondition: return session token as String sessionToken
      */
-    private static String smsFactor(JSONObject factor, String stateToken) throws ClientProtocolException, JSONException, IOException {
+    private static String smsFactor(JSONObject factor, String stateToken) throws JSONException, IOException {
         Scanner scanner = new Scanner(System.in);
         String answer = "";
         String sessionToken = "";
 
         //prompt for sms verification
         System.out.println("\nSMS Factor Authentication \nEnter 'change factor' to use a different factor");
-        while (sessionToken == "") {
-            if (answer != "") {
+        while (Objects.equals(sessionToken, "")) {
+            if (!Objects.equals(answer, "")) {
                 System.out.println("Incorrect passcode, please try again or type 'new code' to be sent a new sms token");
             } else {
                 //send initial code to user
@@ -172,19 +169,20 @@ class MFA {
     }
 
 
-    /*Handles token factor authentication, i.e: Google Authenticator or Okta Verify
+    /**
+     * Handles token factor authentication, i.e: Google Authenticator or Okta Verify
      * Precondition: question factor as JSONObject factor, current state token stateToken
      * Postcondition: return session token as String sessionToken
      */
-    private static String totpFactor(JSONObject factor, String stateToken) throws ClientProtocolException, JSONException, IOException {
+    private static String totpFactor(JSONObject factor, String stateToken) throws JSONException, IOException {
         Scanner scanner = new Scanner(System.in);
         String sessionToken = "";
         String answer = "";
 
         //prompt for token
         System.out.println("\n" + factor.getString("provider") + " Token Factor Authentication\nEnter 'change factor' to use a different factor");
-        while (sessionToken == "") {
-            if (answer != "") {
+        while (Objects.equals(sessionToken, "")) {
+            if (!Objects.equals(answer, "")) {
                 System.out.println("Invalid token, please try again");
             }
 
@@ -200,17 +198,14 @@ class MFA {
     }
 
 
-    /*Handles push factor authentication
-     *
-     *
+    /**
+     * Handles push factor authentication
      */
-    private static String pushFactor(JSONObject factor, String stateToken) throws ClientProtocolException, JSONException, IOException {
-        Calendar newTime = null;
-        Calendar time = Calendar.getInstance();
+    private static String pushFactor(JSONObject factor, String stateToken) throws JSONException, IOException {
         String sessionToken = "";
 
         System.out.println("\nPush Factor Authentication");
-        while (sessionToken == "") {
+        while (Objects.equals(sessionToken, "")) {
             //System.out.println("Token: ");
             //prints waiting tick marks
             //if( time.compareTo(newTime) > 4000){
@@ -223,19 +218,18 @@ class MFA {
                 System.out.println("Session has timed out");
                 return "timeout";
             }
-            time = newTime;
-            newTime = Calendar.getInstance();
         }
         return sessionToken;
     }
 
 
-    /*Handles verification for all Factor types
+    /**
+     * Handles verification for all Factor types
      * Precondition: question factor as JSONObject factor, current state token stateToken
      * Postcondition: return session token as String sessionToken
      */
     private static String verifyAnswer(String answer, JSONObject factor, String stateToken, String factorType)
-            throws JSONException, ClientProtocolException, IOException {
+            throws JSONException, IOException {
 
         String sessionToken = null;
 
@@ -244,16 +238,16 @@ class MFA {
 
         profile.put("stateToken", stateToken);
 
-        JSONObject jsonObjResponse = null;
+        JSONObject jsonObjResponse;
 
         //if (factorType.equals("question")) {
 
-        if (answer != null && answer != "") {
+        if (answer != null && !Objects.equals(answer, "")) {
             profile.put("answer", answer);
         }
 
         //create post request
-        CloseableHttpResponse responseAuthenticate = null;
+        CloseableHttpResponse responseAuthenticate;
         CloseableHttpClient httpClient = HttpClients.createDefault();
 
         HttpPost httpost = new HttpPost(verifyPoint);
@@ -285,7 +279,7 @@ class MFA {
         }
         //}
 
-        if (jsonObjResponse != null && jsonObjResponse.has("sessionToken"))
+        if (jsonObjResponse.has("sessionToken"))
             sessionToken = jsonObjResponse.getString("sessionToken");
 
         String pushResult = null;
@@ -310,7 +304,7 @@ class MFA {
 
                 while (pushResult == null || pushResult.equals("WAITING")) {
                     pushResult = null;
-                    CloseableHttpResponse responsePush = null;
+                    CloseableHttpResponse responsePush;
                     httpClient = HttpClients.createDefault();
 
                     HttpPost pollReq = new HttpPost(pollUrl);
@@ -341,7 +335,7 @@ class MFA {
                     System.out.println("Waiting for you to approve the Okta push notification on your device...");
                     try {
                         Thread.sleep(500);
-                    } catch (InterruptedException iex) {
+                    } catch (InterruptedException ignored) {
 
                     }
 

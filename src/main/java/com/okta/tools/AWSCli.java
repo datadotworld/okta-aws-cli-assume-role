@@ -37,8 +37,6 @@ import com.amazonaws.services.securitytoken.model.AssumeRoleWithSAMLRequest;
 import com.amazonaws.services.securitytoken.model.AssumeRoleWithSAMLResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.okta.sdk.models.auth.AuthResult;
-import com.okta.sdk.models.factors.Factor;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -49,7 +47,6 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -72,7 +69,6 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.InputMismatchException;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Scanner;
 
@@ -145,7 +141,7 @@ public class AWSCli {
     /* Authenticates users credentials via Okta, return Okta session token
      * Postcondition: returns String oktaSessionToken
      * */
-    private static String oktaAuthntication() throws ClientProtocolException, JSONException, IOException {
+    private static String oktaAuthntication() throws JSONException, IOException {
         CloseableHttpResponse responseAuthenticate = null;
         int requestStatus = 0;
 
@@ -156,7 +152,7 @@ public class AWSCli {
             Scanner scanner = new Scanner(System.in);
 
             Console console = System.console();
-            String oktaPassword = null;
+            String oktaPassword;
             if (console != null) {
                 oktaPassword = new String(console.readPassword("Password: "));
             } else { // hack to be able to debug in an IDE
@@ -186,8 +182,8 @@ public class AWSCli {
     }
 
     /*Uses user's credentials to obtain Okta session Token */
-    private static CloseableHttpResponse authnticateCredentials(String username, String password) throws JSONException, ClientProtocolException, IOException {
-        HttpPost httpost = null;
+    private static CloseableHttpResponse authnticateCredentials(String username, String password) throws JSONException, IOException {
+        HttpPost httpost;
         CloseableHttpClient httpClient = HttpClients.createDefault();
 
 
@@ -215,6 +211,7 @@ public class AWSCli {
         File f = new File(System.getProperty("user.home") + "/.aws/credentials");
         //creates credentials file if it doesn't exist yet
         if (!f.exists()) {
+            //noinspection ResultOfMethodCallIgnored
             f.getParentFile().mkdirs();
 
             PrintWriter writer = new PrintWriter(f, "UTF-8");
@@ -227,6 +224,7 @@ public class AWSCli {
         f = new File(System.getProperty("user.home") + "/.aws/config");
         //creates credentials file if it doesn't exist yet
         if (!f.exists()) {
+            //noinspection ResultOfMethodCallIgnored
             f.getParentFile().mkdirs();
 
             PrintWriter writer = new PrintWriter(f, "UTF-8");
@@ -266,7 +264,7 @@ public class AWSCli {
     }
 
     /*Handles possible AWS assertion retrieval errors */
-    private static void samlFailHandler(int requestStatus, CloseableHttpResponse responseSAML) throws UnknownHostException {
+    private static void samlFailHandler(CloseableHttpResponse responseSAML) throws UnknownHostException {
         if (responseSAML.getStatusLine().getStatusCode() == 500) {
             //incorrectly formatted app url
             throw new UnknownHostException();
@@ -278,7 +276,7 @@ public class AWSCli {
     }
 
     /* Handles user selection prompts */
-    private static int numSelection(int max) {
+    static int numSelection(int max) {
         Scanner scanner = new Scanner(System.in);
 
         int selection = -1;
@@ -289,8 +287,7 @@ public class AWSCli {
             try {
                 selection = Integer.parseInt(selectInput) - 1;
                 if (selection >= max) {
-                    InputMismatchException e = new InputMismatchException();
-                    throw e;
+                    throw new InputMismatchException();
                 }
             } catch (InputMismatchException e) {
                 //raised by something other than a number entered
@@ -306,18 +303,18 @@ public class AWSCli {
     }
 
     /* Retrieves SAML assertion from Okta containing AWS roles */
-    private static String awsSamlHandler(String oktaSessionToken) throws ClientProtocolException, IOException {
-        HttpGet httpget = null;
-        CloseableHttpResponse responseSAML = null;
+    private static String awsSamlHandler(String oktaSessionToken) throws IOException {
+        HttpGet httpget;
+        CloseableHttpResponse responseSAML;
         CloseableHttpClient httpClient = HttpClients.createDefault();
         String resultSAML = "";
-        String outputSAML = "";
+        String outputSAML;
 
         // Part 2: Get the Identity Provider and Role ARNs.
         // Request for AWS SAML response containing roles
         httpget = new HttpGet(oktaAWSAppURL + "?onetimetoken=" + oktaSessionToken);
         responseSAML = httpClient.execute(httpget);
-        samlFailHandler(responseSAML.getStatusLine().getStatusCode(), responseSAML);
+        samlFailHandler(responseSAML);
 
         //Parse SAML response
         BufferedReader brSAML = new BufferedReader(new InputStreamReader(
@@ -344,8 +341,8 @@ public class AWSCli {
         resultSAML = resultSAML.replace("&#x2b;", "+").replace("&#x3d;", "=");
         String resultSAMLDecoded = new String(Base64.decodeBase64(resultSAML));
 
-        ArrayList<String> principalArns = new ArrayList<String>();
-        ArrayList<String> roleArns = new ArrayList<String>();
+        ArrayList<String> principalArns = new ArrayList<>();
+        ArrayList<String> roleArns = new ArrayList<>();
 
         //When the app is not assigned to you no assertion is returned
         if (!resultSAMLDecoded.contains("arn:aws")) {
@@ -357,7 +354,7 @@ public class AWSCli {
 
         //Gather list of applicable AWS roles
         int i = 0;
-        while (resultSAMLDecoded.indexOf("arn:aws") != -1) {
+        while (resultSAMLDecoded.contains("arn:aws")) {
             /*Trying to parse the value of the Role SAML Assertion that typically looks like this:
             <saml2:AttributeValue xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="xs:string">
             arn:aws:iam::[AWS-ACCOUNT-ID]:saml-provider/Okta,arn:aws:iam::[AWS-ACCOUNT-ID]:role/[ROLE_NAME]
@@ -432,7 +429,7 @@ public class AWSCli {
             {
                 if (managedPolicies.size() > 1) //if there's more than one policy, we're asking the user to select one of them
                 {
-                    List<String> lstManagedPolicies = new ArrayList<String>();
+                    List<String> lstManagedPolicies = new ArrayList<>();
 
                     for (AttachedPolicy managedPolicy : managedPolicies) {
                         lstManagedPolicies.add(managedPolicy.getPolicyName());
@@ -481,7 +478,6 @@ public class AWSCli {
     }
 
     private static int selectPolicy(List<String> lstPolicies) {
-        String strSelectedPolicy = null;
 
         System.out.println("\nPlease select a role policy: ");
 
@@ -493,9 +489,7 @@ public class AWSCli {
         }
 
         //Prompt user for policy selection
-        int selection = numSelection(lstPolicies.size());
-
-        return selection;
+        return numSelection(lstPolicies.size());
     }
 
     private static String processPolicyDocument(String policyDoc) {
@@ -530,7 +524,7 @@ public class AWSCli {
                 }
                 if (resource != null) {
                     if (resource.isArray()) { //if we're handling a policy with an array of AssumeRole attributes
-                        ArrayList<String> lstRoles = new ArrayList<String>();
+                        ArrayList<String> lstRoles = new ArrayList<>();
                         for (final JsonNode node : resource) {
                             lstRoles.add(node.asText());
                         }
@@ -540,9 +534,9 @@ public class AWSCli {
                         logger.debug("Role to assume: " + roleToAssume);
                     }
                 }
-            } catch (IOException ioe) {
+            } catch (IOException ignored) {
             }
-        } catch (UnsupportedEncodingException uee) {
+        } catch (UnsupportedEncodingException ignored) {
 
         }
         return strRoleToAssume;
@@ -551,7 +545,7 @@ public class AWSCli {
     /* Prompts the user to select a role in case the role policy contains an array of roles instead of a single role
     */
     private static String selectRole(List<String> lstRoles) {
-        String strSelectedRole = null;
+        String strSelectedRole;
 
         System.out.println("\nPlease select the role you want to assume: ");
 
@@ -578,7 +572,7 @@ public class AWSCli {
     /* Retrieves AWS credentials from AWS's assumedRoleResult and write the to aws credential file
      * Precondition :  AssumeRoleWithSAMLResult assumeResult
      */
-    private static String setAWSCredentials(AssumeRoleWithSAMLResult assumeResult, String credentialsProfileName) throws FileNotFoundException, UnsupportedEncodingException, IOException {
+    private static String setAWSCredentials(AssumeRoleWithSAMLResult assumeResult, String credentialsProfileName) throws IOException {
         BasicSessionCredentials temporaryCredentials =
                 new BasicSessionCredentials(
                         assumeResult.getCredentials().getAccessKeyId(),
@@ -612,8 +606,9 @@ public class AWSCli {
             throws IOException {
 
         ProfilesConfigFile profilesConfigFile = null;
+        Object[] args = {profileName};
         MessageFormat profileNameFormatWithBrackets = new MessageFormat("[{0}]");
-        String profileNameWithBrackets = profileNameFormatWithBrackets.format(profileName);
+        String profileNameWithBrackets = profileNameFormatWithBrackets.format(args);
 
         try {
             profilesConfigFile = new ProfilesConfigFile();
@@ -626,18 +621,10 @@ public class AWSCli {
                 //if we end up here, it means we were  able to find a matching profile
                 populateCredentialsFile(profileNameWithBrackets, awsAccessKey, awsSecretKey, awsSessionToken);
             }
-        } catch (AmazonClientException ace) {
+        } catch (AmazonClientException | IllegalArgumentException e) {
             //this could happen if the default profile doesn't have a valid AWS Access Key ID
             //in this case, error would be "Unable to load credentials into profile [default]: AWS Access Key ID is not specified."
             populateCredentialsFile(profileNameWithBrackets, awsAccessKey, awsSecretKey, awsSessionToken);
-        } catch (IllegalArgumentException iae) {
-            //if we end up here, it means we were not able to find a matching profile so we need to append one
-            populateCredentialsFile(profileNameWithBrackets, awsAccessKey, awsSecretKey, awsSessionToken);
-            //FileWriter fileWriter = new FileWriter(System.getProperty("user.home") + "/.aws/credentials", true);
-            //TODO: need to be updated to work with Windows
-            //PrintWriter writer = new PrintWriter(fileWriter);
-            //WriteNewProfile(writer, profileNameWithBrackets, awsAccessKey, awsSecretKey, awsSessionToken);
-            //fileWriter.close();
         }
     }
 
@@ -653,9 +640,8 @@ public class AWSCli {
         //first, we add our refreshed profile
         writeNewProfile(pw, profileNameLine, awsAccessKey, awsSecretKey, awsSessionToken);
 
-        String line = null;
+        String line;
         int lineCounter = 0;
-        boolean bFileStart = true;
 
         //second, we're copying all the other profile from the original credentials file
         while ((line = br.readLine()) != null) {
@@ -701,9 +687,7 @@ public class AWSCli {
         //first, we add our refreshed profile
         writeNewRoleToAssume(pw, profileName, roleToAssume);
 
-        String line = null;
-        int lineCounter = 0;
-        boolean bFileStart = true;
+        String line;
 
         //second, we're copying all the other profiles from the original config file
         while ((line = br.readLine()) != null) {
@@ -740,7 +724,7 @@ public class AWSCli {
         }
     }
 
-    public static void writeNewProfile(PrintWriter pw, String profileNameLine, String awsAccessKey, String awsSecretKey, String awsSessionToken) {
+    private static void writeNewProfile(PrintWriter pw, String profileNameLine, String awsAccessKey, String awsSecretKey, String awsSessionToken) {
 
         pw.println(profileNameLine);
         pw.println("aws_access_key_id=" + awsAccessKey);
@@ -750,7 +734,7 @@ public class AWSCli {
         //pw.println();
     }
 
-    public static void writeNewRoleToAssume(PrintWriter pw, String profileName, String roleToAssume) {
+    private static void writeNewRoleToAssume(PrintWriter pw, String profileName, String roleToAssume) {
 
         pw.println("[profile " + profileName + "]");
         if (roleToAssume != null && !roleToAssume.equals(""))
