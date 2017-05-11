@@ -95,6 +95,7 @@ public class awscli {
         try {
 
             String strOktaSessionToken = oktaAuthntication();
+            // TODO - Optionally cache okta session
             if (!strOktaSessionToken.equalsIgnoreCase(""))
                 //Step #2 get SAML assertion from Okta
                 resultSAML = awsSamlHandler(strOktaSessionToken);
@@ -602,7 +603,7 @@ public class awscli {
             credentialsProfileName = credentialsProfileName.replaceAll(":assumed-role", "");
         }
 
-        Object[] args = {new String(credentialsProfileName), selectedPolicyRank};
+        Object[] args = {credentialsProfileName, selectedPolicyRank};
         MessageFormat profileNameFormat = new MessageFormat("{0}/{1}");
         credentialsProfileName = profileNameFormat.format(args);
 
@@ -618,9 +619,8 @@ public class awscli {
             throws IOException {
 
         ProfilesConfigFile profilesConfigFile = null;
-        Object[] args = {new String(profileName)};
         MessageFormat profileNameFormatWithBrackets = new MessageFormat("[{0}]");
-        String profileNameWithBrackets = profileNameFormatWithBrackets.format(args);
+        String profileNameWithBrackets = profileNameFormatWithBrackets.format(profileName);
 
         try {
             profilesConfigFile = new ProfilesConfigFile();
