@@ -37,7 +37,11 @@ import com.amazonaws.services.securitytoken.model.AssumeRoleWithSAMLRequest;
 import com.amazonaws.services.securitytoken.model.AssumeRoleWithSAMLResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.base.Charsets;
+import com.google.common.io.Files;
+import lombok.val;
 import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
@@ -99,12 +103,11 @@ public class AWSCli {
         // Step #1: Initiate the authentication and capture the SAML assertion.
         String resultSAML = "";
         try {
-
-            String strOktaSessionToken = oktaAuthntication();
-            // TODO - Optionally cache okta session
-            if (!strOktaSessionToken.equalsIgnoreCase(""))
+            String oktaSessionToken = oktaAuthentication();
+            if (!StringUtils.isEmpty(oktaSessionToken)) {
                 //Step #2 get SAML assertion from Okta
-                resultSAML = awsSamlHandler(strOktaSessionToken);
+                resultSAML = awsSamlHandler(oktaSessionToken);
+            }
         } catch (MalformedURLException e) {
             e.printStackTrace();
         } catch (UnknownHostException e) {
@@ -114,7 +117,7 @@ public class AWSCli {
             logger.error("\nNo Org found, please specify an OKTA_ORG parameter in your config.properties file");
             System.exit(0);
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.error(e);
         }
 
         // Step #3: Assume an AWS role using the SAML Assertion from Okta
@@ -141,7 +144,7 @@ public class AWSCli {
     /* Authenticates users credentials via Okta, return Okta session token
      * Postcondition: returns String oktaSessionToken
      * */
-    private static String oktaAuthntication() throws JSONException, IOException {
+    private static String oktaAuthentication() throws JSONException, IOException {
         CloseableHttpResponse responseAuthenticate = null;
         int requestStatus = 0;
 
@@ -160,7 +163,7 @@ public class AWSCli {
                 oktaPassword = scanner.next();
             }
 
-            responseAuthenticate = authnticateCredentials(oktaUsername, oktaPassword);
+            responseAuthenticate = authenticateCredentials(oktaUsername, oktaPassword);
             requestStatus = responseAuthenticate.getStatusLine().getStatusCode();
             authnFailHandler(requestStatus, responseAuthenticate);
         }
@@ -170,6 +173,7 @@ public class AWSCli {
                 (responseAuthenticate.getEntity().getContent())));
 
         String outputAuthenticate = br.readLine();
+        System.out.println(outputAuthenticate);
         JSONObject jsonObjResponse = new JSONObject(outputAuthenticate);
 
         responseAuthenticate.close();
@@ -182,7 +186,7 @@ public class AWSCli {
     }
 
     /*Uses user's credentials to obtain Okta session Token */
-    private static CloseableHttpResponse authnticateCredentials(String username, String password) throws JSONException, IOException {
+    private static CloseableHttpResponse authenticateCredentials(String username, String password) throws JSONException, IOException {
         HttpPost httpost;
         CloseableHttpClient httpClient = HttpClients.createDefault();
 
@@ -350,8 +354,6 @@ public class AWSCli {
             System.exit(0);
         }
 
-        System.out.println("\nPlease choose the role you would like to assume: ");
-
         //Gather list of applicable AWS roles
         int i = 0;
         while (resultSAMLDecoded.contains("arn:aws")) {
@@ -372,14 +374,22 @@ public class AWSCli {
             i++;
         }
 
-        //Prompt user for role selection
-        int selection = numSelection(roleArns.size());
+        int selection;
+        if (roleArns.size() == 1) {
+            // No need to prompt the user. Just choose the only option available
+            selection = 0;
+        } else {
+            System.out.println("\nPlease choose the role you would like to assume: ");
+            for (i = 0; i < roleArns.size(); i++) {
+                System.out.println("[ " + (i + 1) + " ]: " + roleArns.get(i));
+            }
+            selection = numSelection(roleArns.size());
+        }
 
         String principalArn = principalArns.get(selection);
         String roleArn = roleArns.get(selection);
         crossAccountRoleName = roleArn.substring(roleArn.indexOf("/") + 1);
         logger.debug("Cross-account role is " + crossAccountRoleName);
-
 
         //creates empty AWS credentials to prevent the AWSSecurityTokenServiceClient object from unintentionally loading the previous profile we just created
         BasicAWSCredentials awsCreds = new BasicAWSCredentials("", "");
@@ -398,7 +408,7 @@ public class AWSCli {
 
     private static void getRoleToAssume(String roleName) {
 
-        if (roleName != null && !roleName.equals("") && awsIamKey != null && awsIamSecret != null && !awsIamKey.equals("") && !awsIamSecret.equals("")) {
+        if (!StringUtils.isEmpty(roleName) && !StringUtils.isEmpty(awsIamKey) && !StringUtils.isEmpty(awsIamSecret)) {
 
             logger.debug("Creating the AWS Identity Management client");
             AmazonIdentityManagementClient identityManagementClient
@@ -597,7 +607,7 @@ public class AWSCli {
         //update the credentials file with the unique profile name
         updateCredentialsFile(credentialsProfileName, awsAccessKey, awsSecretKey, awsSessionToken);
         //also override the default profile
-        updateCredentialsFile(DefaultProfileName, awsAccessKey, awsSecretKey, awsSessionToken);
+//        updateCredentialsFile(DefaultProfileName, awsAccessKey, awsSecretKey, awsSessionToken);
 
         return credentialsProfileName;
     }
@@ -737,8 +747,9 @@ public class AWSCli {
     private static void writeNewRoleToAssume(PrintWriter pw, String profileName, String roleToAssume) {
 
         pw.println("[profile " + profileName + "]");
-        if (roleToAssume != null && !roleToAssume.equals(""))
+        if (!StringUtils.isEmpty(roleToAssume)) {
             pw.println("role_arn=" + roleToAssume);
+        }
         pw.println("source_profile=" + profileName);
         pw.println("region=" + awsRegion);
     }

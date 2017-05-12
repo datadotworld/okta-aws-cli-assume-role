@@ -1,5 +1,6 @@
 package com.okta.tools;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
@@ -73,7 +74,7 @@ class MFA {
 
     /**
      * Handles factor selection based on factors found in parameter authResponse, returns the selected factor
-     * Precondition: JSINObject authResponse
+     * Precondition: JSONObject authResponse
      * Postcondition: return session token as String sessionToken
      */
     private static JSONObject selectFactor(JSONObject authResponse) throws JSONException {
@@ -117,8 +118,8 @@ class MFA {
 
         //prompt user for answer
         System.out.println("\nSecurity Question Factor Authentication\nEnter 'change factor' to use a different factor\n");
-        while (Objects.equals(sessionToken, "")) {
-            if (!Objects.equals(answer, "")) {
+        while (StringUtils.isEmpty(sessionToken)) {
+            if (!StringUtils.isEmpty(answer)) {
                 System.out.println("Incorrect answer, please try again");
             }
             System.out.println(question);
@@ -146,8 +147,8 @@ class MFA {
 
         //prompt for sms verification
         System.out.println("\nSMS Factor Authentication \nEnter 'change factor' to use a different factor");
-        while (Objects.equals(sessionToken, "")) {
-            if (!Objects.equals(answer, "")) {
+        while (StringUtils.isEmpty(sessionToken)) {
+            if (!StringUtils.isEmpty(answer)) {
                 System.out.println("Incorrect passcode, please try again or type 'new code' to be sent a new sms token");
             } else {
                 //send initial code to user
@@ -159,7 +160,7 @@ class MFA {
             if (answer.equals("new code")) {
                 answer = "";
                 System.out.println("New code sent! \n");
-            } else if (answer.toLowerCase().equals("change factor")) {
+            } else if (StringUtils.equalsIgnoreCase(answer, "change factor")) {
                 return answer;
             }
             //verifies code
@@ -181,8 +182,8 @@ class MFA {
 
         //prompt for token
         System.out.println("\n" + factor.getString("provider") + " Token Factor Authentication\nEnter 'change factor' to use a different factor");
-        while (Objects.equals(sessionToken, "")) {
-            if (!Objects.equals(answer, "")) {
+        while (StringUtils.isEmpty(sessionToken)) {
+            if (!StringUtils.isEmpty(answer)) {
                 System.out.println("Invalid token, please try again");
             }
 
@@ -205,7 +206,7 @@ class MFA {
         String sessionToken = "";
 
         System.out.println("\nPush Factor Authentication");
-        while (Objects.equals(sessionToken, "")) {
+        while (StringUtils.isEmpty(sessionToken)) {
             //System.out.println("Token: ");
             //prints waiting tick marks
             //if( time.compareTo(newTime) > 4000){
@@ -213,7 +214,6 @@ class MFA {
             //}
             //Verify if Okta Push has been pushed
             sessionToken = verifyAnswer(null, factor, stateToken, "push");
-            System.out.println(sessionToken);
             if (sessionToken.equals("Timeout")) {
                 System.out.println("Session has timed out");
                 return "timeout";
@@ -341,6 +341,7 @@ class MFA {
 
                     //if(pushResult.equals("SUCCESS")) {
                     if (jsonTransaction.has("sessionToken")) {
+                        System.out.println(jsonTransaction.toString());
                         sessionToken = jsonTransaction.getString("sessionToken");
                     }
                     //}
